@@ -2,21 +2,8 @@
 #include <iomanip>
 #include <Eigen/Eigen> //3.3.4
 #include <cmath>
-
-// --- Setup some Eigen quick shorthands ---
-
-// Define the scalar type used.
-using Scalar = double; // numpy float64
-static constexpr int Dynamic = Eigen::Dynamic;
-
-// Using shorthand for `Matrix<rows, cols>` with scalar type.
-template <int rows = Dynamic, int cols = Dynamic>
-using Matrix = Eigen::Matrix<Scalar, rows, cols>; // lets you do Matrix<3,3> or Matrix<3,1> etc;
-
-template <int rows = Dynamic>
-using Vector = Matrix<rows, 1>; // lets you do Vector<3> or Vector<4> etc;
-
-using Quaternion = Eigen::Quaternion<Scalar>; // type Quaternion instead of Eigen::Quaternion<Scalar>
+#include "nn.h"
+#include "eigen_shorts.h"
 
 // --- Constants ---
 static constexpr Scalar Gz = -9.81;
@@ -334,95 +321,12 @@ State rk4(State inital, Scalar dt, State final)
     return final;
 }
 
-//-- DORMAND PRINCE 7(8) INTEGRATOR. REMOVED FOR NOW. --
-// constexpr Scalar safety_factor = 0.9;    // Safety factor for step size control
-// constexpr Scalar min_step_size = 1e-6;   // Minimum allowable step size
-// constexpr Scalar max_step_size = 1.0;    // Maximum allowable step size
-// constexpr Scalar error_threshold = 1e-2; // Maximum allowable step size
-// Scalar calculate_error(const State &y1, const State &y2)
-// {
-//     // Implement the error calculation based on your problem.
-//     // For example, you can use the Euclidean norm of the difference.
-//     return (y1.x - y2.x).norm();
-// }
-
-// State integrate_dormand_prince(State initial, Scalar dt)
-// {
-//     State y = initial;
-
-//     while (true)
-//     {
-//         // Compute RK8 step
-//         State y_temp = rk4(y, dt, y);
-
-//         // Compute two smaller RK4 steps
-//         State y_half_dt = rk4(y, 0.5 * dt, y);
-//         y_half_dt = rk4(y_half_dt, 0.5 * dt, y_half_dt);
-
-//         // Calculate the error
-//         Scalar error = calculate_error(y_temp, y_half_dt);
-
-//         // Adjust the step size
-//         Scalar scale_factor = std::pow((1.0 / error), 1.0 / 8.0);
-//         Scalar new_dt = safety_factor * dt * scale_factor;
-
-//         // Check if the error is within the tolerance
-//         if (error < 1.0)
-//         {
-//             // Accept the step and update the state
-//             y = y_temp;
-
-//             // Update the time step for the next iteration
-//             dt = std::min(std::max(new_dt, min_step_size), max_step_size);
-
-//             // Output the state or perform other actions as needed
-
-//             // Check if the integration is complete based on your criteria
-//             if (error < error_threshold)
-//             {
-//                 break;
-//             }
-//         }
-//         else
-//         {
-//             // Retry the step with a smaller step size
-//             dt = std::min(new_dt, dt * 0.9f);
-//         }
-//     }
-
-//     return y;
-// }
-// State euler(State initial, Scalar dt)
-// {
-//     State y = initial;
-
-//     // Perform one Euler step
-//     State k1;
-//     k1.setZero();
-//     k1 = dynamics(y, k1);
-
-//     y.x += dt * k1.x;
-
-//     // You can add state validation or additional processing here if needed
-
-//     return y;
-// }
-
 Scalar step_motors(Scalar rpm, Scalar desired_rpm, Scalar dt)
 {
-        float c = std::exp(-dt * motor_tau_inv);
-        rpm = c * rpm + (1 - c) * desired_rpm;
-        return rpm;
-}
-
-Scalar step_motors(Scalar rpm, Scalar desired_rpm, Scalar dt)
-{
-    float a = 2.0 / std::pow(dt, 2);
-    float b = (desired_rpm - rpm) / dt - a * dt;
-    rpm = a * std::pow(dt, 2) + b * dt + rpm;
+    float c = std::exp(-dt * motor_tau_inv);
+    rpm = c * rpm + (1 - c) * desired_rpm;
     return rpm;
 }
-
 
 /**
  * @brief Step function to update the environment and quadcopter state.
@@ -438,16 +342,8 @@ State step(State state, Vector<4> &init_omega, Vector<4> desired_thurst_pc, Scal
 
     State old_state = state;
     State next_state = state;
-    // Scalar true_hover_thrust = 0.6074674579665363;
-    // Scalar remaining_thrust = 1.0 - true_hover_thrust;
-    // desired_thurst_pc[0] = desired_thurst_pc[0] <= 0.0f ? true_hover_thrust * desired_thurst_pc[0] : remaining_thrust * desired_thurst_pc[0];
-    // desired_thurst_pc[1] = desired_thurst_pc[1] <= 0.0f ? true_hover_thrust * desired_thurst_pc[1] : remaining_thrust * desired_thurst_pc[1];
-    // desired_thurst_pc[2] = desired_thurst_pc[2] <= 0.0f ? true_hover_thrust * desired_thurst_pc[2] : remaining_thrust * desired_thurst_pc[2];
-    // desired_thurst_pc[3] = desired_thurst_pc[3] <= 0.0f ? true_hover_thrust * desired_thurst_pc[3] : remaining_thrust * desired_thurst_pc[3];
-    // desired_thurst_pc = desired_thurst_pc + Vector<4>(true_hover_thrust, true_hover_thrust, true_hover_thrust, true_hover_thrust);
 
     Vector<4> desired_rpm = (desired_thurst_pc * 10000) + Vector<4>(100, 100, 100, 100);
-    // std::cout << "desired_rpm " << desired_rpm.transpose() << std::endl;
 
     Scalar max_dt = 2.5e-3;
     Scalar remain_ctrl_dt = sim_dt;
@@ -505,10 +401,8 @@ State step(State state, Vector<4> &init_omega, Vector<4> desired_thurst_pc, Scal
         state.motor_speed = motor_omega;
     }
     state.prev_motor_speed = desired_rpm;
-    // std::cout << "state x: " << state.x << std::endl;
     state.prev_action = desired_thurst_pc;
 
-    // Do not let quadcopter fall through the floor
     if (state.pos()[2] < 0)
     {
 
@@ -529,33 +423,17 @@ State step(State state, Vector<4> &init_omega, Vector<4> desired_thurst_pc, Scal
     return state;
 }
 
-//-- TODO, reward function. --
 int main()
 {
     State quad;
     quad.setZero();
 
-    // Vector<4> desired_thrust(0.407654, 0.912659, 0.242549, 0.245255);
     Vector<4> init_omega = {0.0, 0.0, 0.0, 0.0};
     NeuralNetwork nn;
-    // quad.prev_motor_speed = {0.413210, 0.909381, 0.239145, 0.247557};
-    // Vector<3> pos{-0.334669, -0.184764, 2.445248};
-    // Vector<3> lv{0.000413, -0.022922, 0.059665};
-    // Vector<4> att{0.999775, 0.006836, -0.002675, -0.019910};
-
-    // quad.set_att(att);
-    // quad.set_vel(lv);
-    // quad.set_pos(pos - quad.goal_position);
 
     for (int i = 0; i < 1000 - 1; i++)
     {
-        // Vector<4> desired_thrust = {control1[i], control3[i], control0[i], control2[i]};
         Vector<4> desired_thrust = {0.7, 0.7, 0.7, 0.7};
-
-        // Scalar timestep_length = timestamp[i + 1] - timestamp[i];
-        // std::cout << "timestep_length " << timestep_length << std::endl;
-
-        // std::cout << "Desired thrust: " << desired_thrust.transpose() << std::endl;
         quad = step(quad, init_omega, desired_thrust, 0.008);
         std::cout << "Quad state: " << quad.getObservation().transpose() << std::endl;
         init_omega = quad.motor_speed;

@@ -1,6 +1,6 @@
 #pragma once
-#include lib/Eigen
-
+#include <Eigen/Eigen>
+#include "eigen_shorts.h"
 // --- Classes. Move nn to header file ---
 /**
  * @brief Neural network class
